@@ -105,7 +105,7 @@ older installation. Without it, the panel keeps showing the command.
 ```sh
 systemctl status whatsapp-mcp-updater.path       # is it watching
 cat /var/lib/whatsapp-mcp/update/status.json      # the last update
-cat /var/lib/whatsapp-mcp/update/update.log       # its full output
+cat /var/lib/whatsapp-mcp/update.agent/update.log # its full output
 ```
 
 ### Deployments that are not install.sh

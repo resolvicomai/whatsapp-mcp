@@ -28,9 +28,31 @@ METHOD="${UPDATE_METHOD:-install}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/whatsapp-mcp}"
 REPO="${REPO:-BrOrlandi/whatsapp-mcp}"
 REQUEST="${UPDATE_DIR}/request.json"
-STATUS="${UPDATE_DIR}/status.json"
-LOG="${UPDATE_DIR}/update.log"
+# UPDATE_DIR belongs to the gateway's uid, so anything in it may be a link the
+# gateway planted. This script runs as root and never opens a file there by
+# path: it writes in STATE_DIR, a sibling only root can write, and publishes
+# into UPDATE_DIR with a rename, which replaces a planted link instead of
+# following it.
+STATE_DIR="${UPDATE_DIR%/}.agent"
+LOG="${STATE_DIR}/update.log"
 
+install -d -m 0700 -o root -g root "${STATE_DIR}"
+if [ -L "${STATE_DIR}" ] || [ "$(stat -c %u "${STATE_DIR}")" != 0 ] \
+    || [ "$(stat -c %d "${STATE_DIR}")" != "$(stat -c %d "${UPDATE_DIR}")" ]; then
+    echo "${STATE_DIR} must be a root-owned directory on the same filesystem as ${UPDATE_DIR}" >&2
+    exit 1
+fi
+
+# publish moves a finished file from STATE_DIR into UPDATE_DIR for the panel.
+publish() {
+    chmod 0644 "${STATE_DIR}/$1.tmp"
+    mv -fT "${STATE_DIR}/$1.tmp" "${UPDATE_DIR}/$1"
+}
+
+if [ -L "${REQUEST}" ]; then
+    rm -f "${REQUEST}"
+    exit 0
+fi
 [ -f "${REQUEST}" ] || exit 0
 
 field() { sed -n "s/^[[:space:]]*\"$1\":[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$2" | head -1; }
@@ -56,7 +78,7 @@ status() {
         if ${first}; then first=false; else lines="${lines},"; fi
         lines="${lines}$(json_string "${line}")"
     done < <(tail -n 15 "${LOG}" 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
-    cat > "${STATUS}.tmp" <<JSON
+    cat > "${STATE_DIR}/status.json.tmp" <<JSON
 {
   "id": $(json_string "${ID}"),
   "target": $(json_string "${TARGET}"),
@@ -68,8 +90,7 @@ status() {
   "updated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON
-    chmod 0644 "${STATUS}.tmp"
-    mv "${STATUS}.tmp" "${STATUS}"
+    publish status.json
 }
 
 fail() { status failed "$1" "$2"; exit 1; }

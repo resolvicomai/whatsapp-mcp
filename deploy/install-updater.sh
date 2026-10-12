@@ -75,11 +75,17 @@ systemctl enable --now whatsapp-mcp-updater.path >/dev/null
 systemctl restart whatsapp-mcp-updater.path
 
 # agent.json is what makes the panel show the button instead of the command.
-cat > "${UPDATE_DIR}/agent.json" <<JSON
+# UPDATE_DIR belongs to the gateway's uid, so the file is written in the
+# root-only sibling the agent uses and renamed into place: writing it by path
+# would follow a link the gateway left there.
+STATE_DIR="${UPDATE_DIR%/}.agent"
+install -d -m 0700 -o root -g root "${STATE_DIR}"
+cat > "${STATE_DIR}/agent.json.tmp" <<JSON
 {
   "method": "${METHOD}",
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON
-chmod 0644 "${UPDATE_DIR}/agent.json"
+chmod 0644 "${STATE_DIR}/agent.json.tmp"
+mv -fT "${STATE_DIR}/agent.json.tmp" "${UPDATE_DIR}/agent.json"
 echo "update agent installed (${METHOD}); the panel's update button is live"

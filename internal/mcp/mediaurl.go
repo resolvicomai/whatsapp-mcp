@@ -1,11 +1,21 @@
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// lookupHost resolves a media URL's host. Tests replace it, since they run
+// without DNS.
+var lookupHost = func(host string) ([]net.IP, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return net.DefaultResolver.LookupIP(ctx, "ip", host)
+}
 
 // checkMediaURL refuses a media URL that points back inside the deployment.
 //
@@ -17,11 +27,14 @@ import (
 // sentence into the model's context — and message content is written by third
 // parties — could have an internal endpoint read out to their own phone.
 //
-// So the rule is the narrow one: http(s) only, a hostname that is not a literal
-// private address, and no credentials smuggled in the userinfo. Resolution
-// itself still happens inside Evolution, so this cannot catch a public hostname
-// that resolves to a private address; the network is expected to be the other
-// half of that defence.
+// So the rule is: http(s) only, no credentials smuggled in the userinfo, and a
+// host that is not, and does not resolve to, a private address. A name like
+// 169.254.169.254.nip.io is public in shape and private in fact, so the name
+// is resolved here and every address it gives must be public; a name that does
+// not resolve is refused too, which also covers shorthand like 127.1 that
+// some resolvers expand. Evolution resolves again when it fetches, and it may
+// follow a redirect, so a name that changes its answer or a public URL that
+// redirects inside is still the network's to stop.
 func checkMediaURL(raw string) error {
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
@@ -44,6 +57,17 @@ func checkMediaURL(raw string) error {
 	}
 	if isInternalName(host) {
 		return fmt.Errorf("url points at a name on the server's own network rather than at a public address")
+	}
+	if net.ParseIP(host) == nil {
+		ips, err := lookupHost(host)
+		if err != nil || len(ips) == 0 {
+			return fmt.Errorf("url's host %q does not resolve", host)
+		}
+		for _, ip := range ips {
+			if isPrivateAddress(ip) {
+				return fmt.Errorf("url's host resolves to a private or loopback address, which would make this a request against the server's own network")
+			}
+		}
 	}
 	return nil
 }

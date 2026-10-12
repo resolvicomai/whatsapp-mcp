@@ -42,6 +42,8 @@ func FullHandler(state *health.State, freshness time.Duration, web, remoteMCP, m
 // whatsapp_status show those behind a credential.
 func writeHealth(w http.ResponseWriter, snapshot health.Snapshot, freshness time.Duration, live bool) {
 	stale := snapshot.Stale(freshness)
+	// The disconnect reason is WhatsApp's own text; it stays out of problems too.
+	snapshot.WhatsApp.Reason = ""
 	queues := make([]health.Queue, len(snapshot.Queues))
 	for i, queue := range snapshot.Queues {
 		queue.LastError = ""

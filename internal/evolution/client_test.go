@@ -3,6 +3,7 @@ package evolution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,5 +43,26 @@ func TestFetchInstancesCarriesTheInstanceToken(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "inst-token") {
 		t.Fatalf("the instance token leaked into JSON: %s", encoded)
+	}
+}
+
+// A contact chooses how big a file is, and Evolution returns the whole file in
+// one answer. The gateway stops reading at MaxResponseBytes instead of holding
+// several copies of whatever arrives.
+func TestDownloadStopsAtTheResponseLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":{"base64":"`))
+		chunk := []byte(strings.Repeat("A", 1<<20))
+		for written := 0; written <= MaxResponseBytes; written += len(chunk) {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+		_, _ = w.Write([]byte(`"}}`))
+	}))
+	defer server.Close()
+	_, err := New(server.URL, "global", 30*time.Second).DownloadMedia(context.Background(), "tok", json.RawMessage(`{}`))
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
 	}
 }

@@ -12,6 +12,16 @@ import (
 	"strings"
 )
 
+// MaxResponseBytes bounds what the gateway reads from one Evolution answer. A
+// downloaded file arrives whole, base64 in JSON, and decoding it takes several
+// times its size in memory; the size is the sender's choice, so an unbounded
+// read lets one large document take down the gateway every instance shares.
+// 64 MiB of base64 is a file of about 48 MB.
+const MaxResponseBytes = 64 << 20
+
+// ErrTooLarge is a response over MaxResponseBytes.
+var ErrTooLarge = errors.New("the answer is larger than the gateway reads (a file over about 48 MB)")
+
 // IngestedEvents is the event subscription the gateway depends on. MESSAGE and
 // SEND_MESSAGE carry both sides of every conversation, HISTORY_SYNC carries the
 // on-demand backfill, and CONNECTION carries the instance state that would
@@ -77,7 +87,10 @@ func (c *Client) call(ctx context.Context, method, path, key string, body, out a
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(nil, resp.Body, MaxResponseBytes)).Decode(&envelope); err != nil {
+		if errors.As(err, new(*http.MaxBytesError)) {
+			return fmt.Errorf("Evolution %s: %w", path, ErrTooLarge)
+		}
 		return fmt.Errorf("decode Evolution %s: %w", path, err)
 	}
 	if len(envelope.Data) == 0 {

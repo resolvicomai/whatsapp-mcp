@@ -15,6 +15,39 @@ To update:
 curl -fsSL https://raw.githubusercontent.com/BrOrlandi/whatsapp-mcp/main/update.sh | sudo bash
 ```
 
+## Unreleased
+
+Security fixes from an audit of 1.3.0-beta.2. The tools and the panel are
+unchanged.
+
+### Fixed
+
+- **The update agent no longer writes through links in the gateway's
+  folder.** It ran as root and opened its log and status by path inside
+  `UPDATE_DIR`, which the gateway's uid owns, so a compromised gateway could
+  have root overwrite any file on the host. The agent now writes in
+  `/var/lib/whatsapp-mcp/update.agent` and renames into `UPDATE_DIR`. The
+  full log moved to `/var/lib/whatsapp-mcp/update.agent/update.log`.
+- **An export can no longer take over another instance's file.** Two
+  instances exporting in the same second shared a file name, and one key's
+  link could serve the other instance's messages.
+- **Changing the panel password ends every other session.**
+- **`/healthz` and `/readyz` no longer show the account's number, name or
+  last message time**, nor raw queue errors. They answer anyone who can
+  reach the host.
+- **`send_media_message` resolves the URL's host** and refuses one that
+  resolves to a private address (`169.254.169.254.nip.io`, `127.1`).
+- **The first-run form refuses a post the browser marks as cross-site**, for
+  panels set up without `SETUP_TOKEN`.
+- **Answers from Evolution are read up to 64 MiB**, so a large document a
+  contact sends cannot exhaust the gateway's memory when downloaded. Files
+  over about 48 MB now fail to download with an error.
+
+### What the update asks
+
+Nothing. `update.sh` reinstalls the update agent, which creates
+`update.agent` on its own.
+
 ## 1.3.0-beta.2
 
 Fixes the WhatsApp connection dropping about every 50 minutes, and the

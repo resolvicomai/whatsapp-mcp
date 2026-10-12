@@ -122,6 +122,15 @@ func (s *sessions) remove(v string) {
 	s.mu.Unlock()
 }
 
+// removeAll ends every session. A password change calls it: changing the
+// password is how an owner evicts someone who got in, and that only works if
+// the sessions opened with the old password stop working too.
+func (s *sessions) removeAll() {
+	s.mu.Lock()
+	s.values = map[string]time.Time{}
+	s.mu.Unlock()
+}
+
 func NewSessionKey() ([]byte, error) {
 	key := make([]byte, 32)
 	_, err := rand.Read(key)
@@ -375,6 +384,8 @@ func (a *webApp) changePassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erro interno", http.StatusInternalServerError)
 		return
 	}
+	a.sessions.removeAll()
+	a.setSession(w, r)
 	// A forced change is on its way somewhere: the panel was refusing to serve
 	// anything else, so land on the panel. A voluntary one should say it worked.
 	if forced {

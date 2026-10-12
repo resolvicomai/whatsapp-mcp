@@ -119,6 +119,20 @@ func (a *webApp) ownHost(r *http.Request, host string) bool {
 	return false
 }
 
+// foreign reports that the browser says a request came from another site:
+// Sec-Fetch-Site names one, or Origin is not this panel.
+func (a *webApp) foreign(r *http.Request) bool {
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+		return true
+	}
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if parsed, err := url.Parse(origin); err != nil || !a.ownHost(r, parsed.Host) {
+			return true
+		}
+	}
+	return false
+}
+
 // api serves one JSON route of the settings page. It is behind the panel's
 // session like every page, and a change is accepted only from the panel's own
 // pages: the session cookie is SameSite=Lax, a JSON body cannot be posted
@@ -143,17 +157,10 @@ func (a *webApp) api(handle func(*http.Request) (any, error)) http.HandlerFunc {
 			return
 		}
 		if r.Method != http.MethodGet {
-			if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+			if a.foreign(r) {
 				w.WriteHeader(http.StatusForbidden)
 				_ = json.NewEncoder(w).Encode(map[string]string{"error": "pedido de outra origem"})
 				return
-			}
-			if origin := r.Header.Get("Origin"); origin != "" {
-				if parsed, err := url.Parse(origin); err != nil || !a.ownHost(r, parsed.Host) {
-					w.WriteHeader(http.StatusForbidden)
-					_ = json.NewEncoder(w).Encode(map[string]string{"error": "pedido de outra origem"})
-					return
-				}
 			}
 			if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 				w.WriteHeader(http.StatusUnsupportedMediaType)

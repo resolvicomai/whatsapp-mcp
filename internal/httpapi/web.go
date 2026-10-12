@@ -437,6 +437,15 @@ func (a *webApp) setup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "O administrador já existe.", 409)
 		return
 	}
+	// Without a token, reaching the port is the only proof of being the
+	// operator, and a page open in the operator's browser can reach a panel
+	// bound to 127.0.0.1 by posting a form to it. A browser marks that post as
+	// coming from another site, and that is refused.
+	if a.foreign(r) {
+		w.WriteHeader(http.StatusForbidden)
+		a.render(w, "setup", setupPageData{layout: layout{Title: "Configuração inicial", Error: "Abra o formulário direto no endereço do painel."}, Token: a.setupToken})
+		return
+	}
 	// The token is what closes the window between the installer printing a
 	// public URL and the operator reaching it. Without this, whoever arrives
 	// first becomes the administrator of somebody else's WhatsApp session.

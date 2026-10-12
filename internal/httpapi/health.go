@@ -35,23 +35,28 @@ func FullHandler(state *health.State, freshness time.Duration, web, remoteMCP, m
 	return mux
 }
 
-// writeHealth reports the whole snapshot, including the WhatsApp session state
-// and the per-queue consumption, so a probe failure can be diagnosed from the
-// response alone. It carries no credentials: every field here is state, never
-// configuration.
+// writeHealth reports the session state and the per-queue consumption, so a
+// probe failure can be diagnosed from the response alone. The probes answer
+// anyone who can reach the host, so the account's identity (number, push name),
+// its message activity times and raw queue errors stay out: the panel and
+// whatsapp_status show those behind a credential.
 func writeHealth(w http.ResponseWriter, snapshot health.Snapshot, freshness time.Duration, live bool) {
 	stale := snapshot.Stale(freshness)
+	queues := make([]health.Queue, len(snapshot.Queues))
+	for i, queue := range snapshot.Queues {
+		queue.LastError = ""
+		queues[i] = queue
+	}
 	body := map[string]any{
 		// The version is here so that "which version is that box running" has an
 		// answer a monitor can read, without a session on the panel.
 		"version":             version.String(),
 		"evolution_connected": snapshot.EvolutionConnected,
 		"last_event_at":       snapshot.LastEventAt,
-		"last_message_at":     snapshot.LastMessageAt,
 		"rabbit_connected":    snapshot.RabbitConnected,
 		"database_connected":  snapshot.DatabaseConnected,
-		"whatsapp":            snapshot.WhatsApp,
-		"queues":              snapshot.Queues,
+		"whatsapp":            map[string]any{"state": snapshot.WhatsApp.State, "changed_at": snapshot.WhatsApp.ChangedAt},
+		"queues":              queues,
 		"stale":               stale,
 	}
 	if problems := snapshot.Problems(); len(problems) > 0 {

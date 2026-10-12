@@ -422,12 +422,17 @@ func (s *Server) exportMessages(ctx context.Context, session Session, args argum
 	if f.ChatJID != "" {
 		scope = safeName(strings.SplitN(f.ChatJID, "@", 2)[0])
 	}
-	path := filepath.Join(s.exportDir, fmt.Sprintf("whatsapp-%s-%s.ndjson", scope, time.Now().Format("20060102-150405")))
-	partial := path + ".partial"
-	file, err := os.OpenFile(partial, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	// Every instance exports into the same folder, and the download link points
+	// at a path. The name therefore carries the instance and a random part, and
+	// the finished file is linked into place rather than renamed: a rename would
+	// silently replace another export of the same name, and that export's link
+	// would then serve this one.
+	file, err := os.CreateTemp(s.exportDir, fmt.Sprintf("whatsapp-%s-%s-%s-*.ndjson.partial", safeName(session.InstanceID), scope, time.Now().Format("20060102-150405")))
 	if err != nil {
 		return toolError("%v", err)
 	}
+	partial := file.Name()
+	path := strings.TrimSuffix(partial, ".partial")
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	w := bufio.NewWriterSize(file, 256<<10)
@@ -453,10 +458,10 @@ func (s *Server) exportMessages(ctx context.Context, session Session, args argum
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(partial, path)
+		err = os.Link(partial, path)
 	}
+	_ = os.Remove(partial)
 	if err != nil {
-		_ = os.Remove(partial)
 		return toolError("the export failed: %v", err)
 	}
 	info, _ := os.Stat(path)
